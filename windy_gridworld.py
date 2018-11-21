@@ -21,7 +21,7 @@ class WindyGridworld(Environment):
 		self.start_states = [(0, 3)]
 		self.terminal_states = [(7, 3)]
 
-		self.current_state = np.random.choice(self.start_states)
+		self.current_state = self.start_states[np.random.choice(range(len(self.start_states)))]
 
 		# self.wind[s] gives wind strength at state 's'
 		self.wind = {}
@@ -92,10 +92,9 @@ class WindyGridworld(Environment):
 
 	def resetCurrentState(self):
 		if (self.current_state in self.terminal_states or self.current_state in self.start_states):
-			self.current_state = np.random.choice(self.start_states)
+			self.current_state = self.start_states[np.random.choice(range(len(self.start_states)))]
 		else:
 			print("Panic!! Trying to reset in the middle of an episode")
-			sys.exit(0)
 
 	def getCurrentState(self):
 		return GridPositionState(self.current_state)

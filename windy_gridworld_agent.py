@@ -72,17 +72,17 @@ class BatchRLAgent(Agent):
 
 		self.Q.updateState({'is_training' : False})
 
+		actions_list = state.getLegalActions()
 		if (train):
 			# return random action with probability self.epsilon
 			if (np.random.random() < self.epsilon):
-				return np.random.choice(state.getLegalActions)
+				return actions_list[np.random.choice(range(len(actions_list)))]
 
 		# find optimal action
-		actions_list = state.getLegalActions()
-		sa_list = list(itertools.product([state], [actions_list]))
+		sa_list = list(itertools.product([state], actions_list))
 		encoding = self.getEncodingsFromList(sa_list)
 		with torch.no_grad():
-			output = self.Q(encoding)
+			output = self.Q(torch.Tensor(encoding))
 			optimal_action_index = torch.argmax(torch.squeeze(output, dim=1), dim=0).item()
 		return actions_list[optimal_action_index]
 
@@ -105,9 +105,8 @@ class BatchRLAgent(Agent):
 			Trains Q-Network with experience replay with only the last batch of data. 
 			Replays examples in reverse order
 		"""
-
 		batch_size = self.learning_hparams['batch_size']
-		data = self.D[-1][: : -1] 			# Reversing last batch of data
+		data = self.D[-2][: : -1] 			# Reversing last batch of data. (-2) since an empty list is appended to self.D at the end of episode
 		# Train for self.ER_epochs
 		for epoch in range(self.ER_epochs):
 			pos = 0
@@ -121,6 +120,7 @@ class BatchRLAgent(Agent):
 					epoch_done = True
 				
 				batch = data[pos : pos + batch_size]
+				pos += batch_size
 
 				# get list of next states in batch
 				batch_next_states = [v[3] for v in batch]
@@ -130,7 +130,7 @@ class BatchRLAgent(Agent):
 					max_Q = []
 					for i in range(len(batch_next_states)):
 						best_action = self.getAction(batch_next_states[i], train=False)
-						max_q = self.Q(self.getEncodingsFromList([(batch_next_states[i], best_action)]))
+						max_q = self.Q(torch.Tensor(self.getEncodingsFromList([(batch_next_states[i], best_action)])))
 						max_Q.append(max_q.item())
 
 				# get target r + max_Q
@@ -141,8 +141,8 @@ class BatchRLAgent(Agent):
 				batch_inputs_encoded = self.getEncodingsFromList(batch_inputs)
 
 				# train step
-				outputs = self.Q(batch_inputs_encoded)
-				loss = self.mse_loss(outputs, np.expand_dims(target, axis=1))
+				outputs = self.Q(torch.Tensor(batch_inputs_encoded))
+				loss = self.mse_loss(outputs, torch.unsqueeze(torch.Tensor(target), dim=1))
 				self.optim.zero_grad()
 				loss.backward()
 				self.optim.step()
@@ -155,7 +155,7 @@ class BatchRLAgent(Agent):
 		encodings = np.empty((len(sa_list), self.encoding_dim), dtype=np.float32)
 		for i in range(len(sa_list)):
 			sa = sa_list[i]
-			encodings[i] = np.concatenate((self.getStateEncoding(sa[0]), self.getActionEncoding(sa[1])), axis=1)
+			encodings[i] = np.concatenate((self.getStateEncoding(sa[0]), self.getActionEncoding(sa[1])), axis=0)
 		return encodings
 
 	def getStateEncoding(self, state):
