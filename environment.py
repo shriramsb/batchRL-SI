@@ -23,6 +23,7 @@ class Environment(object):
 
 class State(object):
 	def __init__(self):
+		self.is_terminal = False
 		pass
 
 	def getEncoding(self):

@@ -1,6 +1,7 @@
 import math
 from windy_gridworld import *
 from windy_gridworld_agent import *
+import numpy as np
 
 def simulateEpisodes(environment, agent, num_episodes, test_every=50):
     episode = 0
@@ -37,11 +38,11 @@ def simulateEpisodes(environment, agent, num_episodes, test_every=50):
             print('testing result %f' % (cumulative_reward, ))
 
             
-
+np.random.seed(0)
 
 
 environment = WindyGridworld(is_king_moves=False, is_stochastic_wind=False)
-learning_hparams = {'learning_rate' : 0.01, 'momentum' : 0.9, 'batch_size' : 16}
+learning_hparams = {'learning_rate' : 0.125, 'momentum' : 0.0, 'batch_size' : 16}
 agent = BatchRLAgent(ER_epochs=10, episodes_per_batch=2, epsilon=0.1, gamma=environment.gamma, learning_hparams=learning_hparams, 
                         multi_output=True, gpu_id=1)
 dropout_input = 0.0
