@@ -78,14 +78,12 @@ class BatchRLAgent(Agent):
 		self.mse_loss = nn.MSELoss()
 		self.optim = torch.optim.SGD(self.Q.parameters(), lr=self.learning_hparams['learning_rate'], momentum=self.learning_hparams['momentum'])
 
+		self.fast_device = torch.device('cpu')
 		if (self.gpu_id >= 0):
 			if (not torch.cuda.is_available()):
 				print("GPU not detected ; using CPU")
-				self.fast_device = torch.device('cpu')
 			else:
 				self.fast_device = torch.device('cuda:' + str(self.gpu_id))
-		else:
-			self.fast_device = torch.device('cpu')
 
 		self.cpu_device = torch.device('cpu')
 		self.Q.to(self.fast_device)
@@ -183,6 +181,9 @@ class BatchRLAgent(Agent):
 					with torch.no_grad():
 						max_Q = []
 						for i in range(len(batch_next_states)):
+							if (batch_next_states[i].is_terminal):
+								max_Q.append(0.0)
+								continue
 							best_action = self.getAction(batch_next_states[i], train=False)
 							max_q = self.Q(torch.from_numpy(self.getEncodingsFromList([(batch_next_states[i], best_action)])))
 							max_Q.append(max_q.item())
@@ -195,6 +196,7 @@ class BatchRLAgent(Agent):
 					batch_inputs_encoded = self.getEncodingsFromList(batch_inputs)
 
 					# train step
+					self.Q.updateState({'is_training' : True})
 					outputs = self.Q(torch.from_numpy(batch_inputs_encoded))
 					loss = self.mse_loss(outputs, torch.unsqueeze(torch.from_numpy(target), dim=1))
 					self.optim.zero_grad()
@@ -208,6 +210,7 @@ class BatchRLAgent(Agent):
 					self.optim.zero_grad()
 					regularised_loss.backward()
 					self.optim.step()
+					self.Q.updateState({'is_training' : False})
 
 					final_parameters = utils.get_params_data(self.Q.parameters())
 
@@ -222,6 +225,9 @@ class BatchRLAgent(Agent):
 					batch_next_states_fd = torch.from_numpy(self.getStateListEncoding(batch_next_states)).to(self.fast_device)
 					with torch.no_grad():
 						next_state_Q = self.Q(batch_next_states_fd)
+						for i in range(len(batch_next_states)):
+							if (batch_next_states[i].is_terminal):
+								next_state_Q[i] *= 0.0
 					actions_one_hot = np.zeros((len(batch_next_states), self.action_encoding_dim), dtype=np.float32)
 					for i in range(len(batch_next_states)):
 						actions = batch_next_states[i].getLegalActions()
@@ -229,7 +235,7 @@ class BatchRLAgent(Agent):
 							actions_one_hot[i, self.actions_to_index[a]] = 1
 
 					actions_one_hot = torch.from_numpy(actions_one_hot).to(self.fast_device)
-					next_state_Q = next_state_Q + (-1e24) * (1 - actions_one_hot)
+					next_state_Q = self.gamma * next_state_Q + (-1e24) * (1 - actions_one_hot)
 					next_state_Q_max = torch.max(next_state_Q, dim=1)[0]
 
 					# get targets ; r + max_Q
@@ -245,7 +251,7 @@ class BatchRLAgent(Agent):
 					for i in range(len(batch_next_states)):
 						actions_one_hot[self.actions_to_index[batch[i][1]]] = 1
 					actions_one_hot = torch.from_numpy(actions_one_hot).to(self.fast_device)
-					outputs = torch.max(outputs_all * actions_one_hot, dim=1)[0]
+					outputs = torch.max(outputs_all + (-1e24) * (1 - actions_one_hot), dim=1)[0]
 					loss = self.mse_loss(outputs, target)
 					
 					self.optim.zero_grad()

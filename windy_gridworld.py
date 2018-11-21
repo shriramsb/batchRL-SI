@@ -88,7 +88,7 @@ class WindyGridworld(Environment):
 		is_terminal = next_state in self.terminal_states
 		self.current_state = next_state
 
-		return reward, GridPositionState(next_state), is_terminal
+		return reward, GridPositionState(next_state, is_terminal), is_terminal
 
 	def resetCurrentState(self):
 		if (self.current_state in self.terminal_states or self.current_state in self.start_states):
@@ -97,7 +97,8 @@ class WindyGridworld(Environment):
 			print("Panic!! Trying to reset in the middle of an episode")
 
 	def getCurrentState(self):
-		return GridPositionState(self.current_state)
+		is_terminal = self.current_state in self.terminal_states
+		return GridPositionState(self.current_state, is_terminal)
 
 class GridPositionState(State):
 	"""
@@ -106,8 +107,9 @@ class GridPositionState(State):
 	_max_pos - opposite corner to origin
 	"""
 
-	def __init__(self, pos):
+	def __init__(self, pos, is_terminal):
 		self.pos = pos
+		self.is_terminal = is_terminal
 	
 	@classmethod
 	def initMembers(cls, origin, max_pos):
