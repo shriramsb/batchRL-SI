@@ -157,7 +157,7 @@ class BatchRLAgent(Agent):
 			Trains Q-Network with experience replay with only the last batch of data. 
 			Replays examples in reverse order
 		"""
-		pi_accumulator = utils.get_zero_like(pi_accumulator)
+		self.pi_accumulator = utils.get_zero_like(pi_accumulator)
 		batch_size = self.learning_hparams['batch_size']
 		data = self.D[-2][: : -1] 			# Reversing last batch of data. (-2) since an empty list is appended to self.D at the end of episode
 		# Train for self.ER_epochs
