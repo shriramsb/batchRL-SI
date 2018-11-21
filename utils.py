@@ -56,6 +56,15 @@ def get_regularisation_penalty(params, initial_params, importance):
 	#returns a scalar
 	#initial params must be list of constant tensors
 	#params must be a list of variable tensors
+	'''
+	if not params:
+		print("params")
+	if not initial_params:
+		print("initial_params")
+	if not importance:
+		print("importance")
+	'''
+
 	penalty = 0
 
 	for i in range(len(params)):
