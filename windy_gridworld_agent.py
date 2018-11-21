@@ -4,16 +4,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import itertools
+import sys
 
 class Network(nn.Module):
 	"""
 	Models Q-value as a neural network with inputs s, a and a scalar output Q(s, a)
 	"""
-	def __init__(self, input_dim, dropout_input=0.0, dropout_hidden=0.0):
+	def __init__(self, input_dim, output_dim, dropout_input=0.0, dropout_hidden=0.0):
 		super(Network, self).__init__()
 		self.fc1 = nn.Linear(input_dim, 256)
 		self.fc2 = nn.Linear(256, 256)
-		self.fc3 = nn.Linear(256, 1)
+		self.fc3 = nn.Linear(256, output_dim)
 		self.state = {'dropout_input' : dropout_input, 'dropout_hidden' : dropout_hidden}
 		self.state.update({'is_training' : True})
 
@@ -31,13 +32,16 @@ class Network(nn.Module):
 		return x
 
 class BatchRLAgent(Agent):
-	def __init__(self, ER_epochs, episodes_per_batch, epsilon, gamma, learning_hparams):
+	def __init__(self, ER_epochs, episodes_per_batch, epsilon, gamma, learning_hparams, multi_output=False, gpu_id=-1):
 		self.ER_epochs = ER_epochs 						# number of epochs to train in batchER
 		self.episodes_per_batch = episodes_per_batch 	# number of episodes to run before training on batch
 		self.epsilon = epsilon 	 						# epsilon for epsilon-greedy action selection
 		self.gamma = gamma 								# decay of reward in environment
 
 		self.learning_hparams = learning_hparams 		# has lr, momentum, batch_size
+
+		self.multi_output = multi_output 				# if multi_output=True, then network takes only s as input and gives Q(s, a) for all actions a
+		self.gpu_id = gpu_id 							# If gpu_id!=-1, then uses gpu to train network
 
 		# Q to be approximated by a neural network
 		self.Q = None             # initialize pytorch neural network
@@ -58,11 +62,27 @@ class BatchRLAgent(Agent):
 		self.action_encoding_dim = len(actions)
 		self.actions_to_index = {}
 		self.actions_to_index = {actions[i] : i for i in range(len(actions))}
+		self.index_to_action = {i : actions[i] for i in range(len(actions))}
 		self.encoding_dim = self.state_encoding_dim + self.action_encoding_dim
 		
-		self.Q = Network(self.encoding_dim, dropout_input=dropout_input, dropout_hidden=dropout_hidden)
+		if (not self.multi_output):
+			self.Q = Network(self.encoding_dim, 1, dropout_input=dropout_input, dropout_hidden=dropout_hidden)
+		else:
+			self.Q = Network(self.state_encoding_dim, len(actions), dropout_input=dropout_input, dropout_hidden=dropout_hidden)
 		self.mse_loss = nn.MSELoss()
 		self.optim = torch.optim.SGD(self.Q.parameters(), lr=self.learning_hparams['learning_rate'], momentum=self.learning_hparams['momentum'])
+
+		if (self.gpu_id >= 0):
+			if (not torch.cuda.is_available()):
+				print("GPU not detected ; using CPU")
+				self.fast_device = torch.device('cpu')
+			else:
+				self.fast_device = torch.device('cuda:' + str(self.gpu_id))
+		else:
+			self.fast_device = torch.device('cpu')
+
+		self.cpu_device = torch.device('cpu')
+		self.Q.to(self.fast_device)
 
 	def getAction(self, state, train=False):
 		"""
@@ -78,13 +98,29 @@ class BatchRLAgent(Agent):
 			if (np.random.random() < self.epsilon):
 				return actions_list[np.random.choice(range(len(actions_list)))]
 
-		# find optimal action
-		sa_list = list(itertools.product([state], actions_list))
-		encoding = self.getEncodingsFromList(sa_list)
-		with torch.no_grad():
-			output = self.Q(torch.Tensor(encoding))
-			optimal_action_index = torch.argmax(torch.squeeze(output, dim=1), dim=0).item()
+		# find optimal action ; doesn't use GPU if not using multiple_outputs
+		if (not self.multi_output):
+			sa_list = list(itertools.product([state], actions_list))
+			encoding = self.getEncodingsFromList(sa_list)
+			with torch.no_grad():
+				output = self.Q(torch.from_numpy(encoding))
+				optimal_action_index = torch.argmax(torch.squeeze(output, dim=1), dim=0).item()
+		else:
+			state_encoding = self.getStateListEncoding([state])
+			state_encoding = torch.from_numpy(state_encoding).to(self.fast_device)
+			with torch.no_grad():
+				output = self.Q(state_encoding)
+				output = torch.squeeze(output, dim=0)
+			legal_actions_one_hot = np.zeros(self.action_encoding_dim, dtype=np.float32)
+			for a in actions_list:
+				legal_actions_one_hot[self.actions_to_index[a]] = 1
+			legal_actions_one_hot = torch.from_numpy(legal_actions_one_hot).to(self.fast_device)
+			output = output + (-1e24) * (1 - legal_actions_one_hot)
+			optimal_action_index = torch.argmax(output, dim=0).item()
+
 		return actions_list[optimal_action_index]
+
+
 
 	def update(self, d, is_episode_end):
 		"""
@@ -126,26 +162,63 @@ class BatchRLAgent(Agent):
 				batch_next_states = [v[3] for v in batch]
 
 				# get max_{a}Q(next state, a)
-				with torch.no_grad():
-					max_Q = []
+				if (not self.multi_output):
+					with torch.no_grad():
+						max_Q = []
+						for i in range(len(batch_next_states)):
+							best_action = self.getAction(batch_next_states[i], train=False)
+							max_q = self.Q(torch.from_numpy(self.getEncodingsFromList([(batch_next_states[i], best_action)])))
+							max_Q.append(max_q.item())
+
+					# get target r + max_Q
+					target = np.array([v[2] for v in batch]) + self.gamma * np.array(max_Q)
+
+					# list of (s, a) tuples in batch
+					batch_inputs = [(v[0], v[1]) for v in batch]
+					batch_inputs_encoded = self.getEncodingsFromList(batch_inputs)
+
+					# train step
+					outputs = self.Q(torch.from_numpy(batch_inputs_encoded))
+					loss = self.mse_loss(outputs, torch.unsqueeze(torch.from_numpy(target), dim=1))
+					self.optim.zero_grad()
+					loss.backward()
+					self.optim.step()
+
+				else:
+
+					# find max_{a}Q(next state, a)
+					batch_next_states_fd = torch.from_numpy(self.getStateListEncoding(batch_next_states)).to(self.fast_device)
+					with torch.no_grad():
+						next_state_Q = self.Q(batch_next_states_fd)
+					actions_one_hot = np.zeros((len(batch_next_states), self.action_encoding_dim), dtype=np.float32)
 					for i in range(len(batch_next_states)):
-						best_action = self.getAction(batch_next_states[i], train=False)
-						max_q = self.Q(torch.Tensor(self.getEncodingsFromList([(batch_next_states[i], best_action)])))
-						max_Q.append(max_q.item())
+						actions = batch_next_states[i].getLegalActions()
+						for a in actions:
+							actions_one_hot[i, self.actions_to_index[a]] = 1
 
-				# get target r + max_Q
-				target = np.array([v[2] for v in batch]) + self.gamma * np.array(max_Q)
+					actions_one_hot = torch.from_numpy(actions_one_hot).to(self.fast_device)
+					next_state_Q = next_state_Q + (-1e24) * (1 - actions_one_hot)
+					next_state_Q_max = torch.max(next_state_Q, dim=1)[0]
 
-				# list of (s, a) tuples in batch
-				batch_inputs = [(v[0], v[1]) for v in batch]
-				batch_inputs_encoded = self.getEncodingsFromList(batch_inputs)
+					# get targets ; r + max_Q
+					target = torch.from_numpy(np.array([v[2] for v in batch], dtype=np.float32)).to(self.fast_device) + next_state_Q_max
 
-				# train step
-				outputs = self.Q(torch.Tensor(batch_inputs_encoded))
-				loss = self.mse_loss(outputs, torch.unsqueeze(torch.Tensor(target), dim=1))
-				self.optim.zero_grad()
-				loss.backward()
-				self.optim.step()
+
+					# list of s tuples in batch
+					self.Q.updateState({'is_training' : True})
+					batch_inputs = [v[0] for v in batch]
+					batch_inputs_encoded = torch.from_numpy(self.getStateListEncoding(batch_inputs)).to(self.fast_device)
+					outputs_all = self.Q(batch_inputs_encoded)
+					actions_one_hot = np.zeros((len(batch_inputs), self.action_encoding_dim), dtype=np.float32)
+					for i in range(len(batch_next_states)):
+						actions_one_hot[self.actions_to_index[batch[i][1]]] = 1
+					actions_one_hot = torch.from_numpy(actions_one_hot).to(self.fast_device)
+					outputs = torch.max(outputs_all * actions_one_hot, dim=1)[0]
+					loss = self.mse_loss(outputs, target)
+					self.optim.zero_grad()
+					loss.backward()
+					self.optim.step()
+					self.Q.updateState({'is_training' : False})
 
 				if (epoch_done):
 					break
@@ -171,13 +244,19 @@ class BatchRLAgent(Agent):
 			encoding.extend(cur_encoding)
 		return np.array(encoding)
 
+	def getStateListEncoding(self, state_list):
+		encoding = []
+		for i in range(len(state_list)):
+			encoding.append(self.getStateEncoding(state_list[i]))
+		return np.array(encoding, dtype=np.float32)
+
 	def getActionEncoding(self, action):
 		"""
 			Returns one-hot encoding of action as 1D numpy array.
 		"""
 		encoding = [0.0 for _ in range(self.action_encoding_dim)]
 		encoding[self.actions_to_index[action]] = 1.0
-		return np.array(encoding)        
+		return np.array(encoding, dtype=np.float32)        
 
 # Implementation of Sarsa agent
 
