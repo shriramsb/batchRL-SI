@@ -5,10 +5,11 @@ from windy_gridworld_agent import *
 def simulateEpisodes(environment, agent, num_episodes, test_every=50):
     for episode in range(num_episodes):
         environment.resetCurrentState()
+        print('Episode %d' % (episode, ))
         while (True):
-            state = environemnt.getCurrentState()
+            state = environment.getCurrentState()
             action = agent.getAction(state, train=True)
-            reward, next_state, is_terminal = environemnt.takeAction(action)
+            reward, next_state, is_terminal = environment.takeAction(action)
 
             agent.update((state, action, reward, next_state), is_terminal)
             if (is_terminal):
@@ -18,21 +19,23 @@ def simulateEpisodes(environment, agent, num_episodes, test_every=50):
             cumulative_reward = 0.0
             decay = 1.0
             while (True):
-                state = environemnt.getCurrentState()
+                state = environment.getCurrentState()
                 action = agent.getAction(state, train=False)
-                reward, next_state, is_terminal = environemnt.takeAction(action)
+                reward, next_state, is_terminal = environment.takeAction(action)
                 cumulative_reward += decay * reward
-                decay *= environemnt.gamma
+                decay *= environment.gamma
                 if (is_terminal):
                     break
+            
+            print('testing result %f' % (cumulative_reward, ))
 
             
 
 
 
-environemnt = WindyGridworld(is_king_moves=False, is_stochastic_wind=False)
-hparams = {}
-agent = BatchRLAgent(ER_iters=10, episodes_per_batch=50, batch_size=128, epsilon=0.1)
+environment = WindyGridworld(is_king_moves=False, is_stochastic_wind=False)
+learning_hparams = {'learning_rate' : 0.01, 'momentum' : 0.9, 'batch_size' : 16}
+agent = BatchRLAgent(ER_epochs=10, episodes_per_batch=50, epsilon=0.1, gamma=environment.gamma, learning_hparams=learning_hparams)
 
 num_episodes = 400
-simulateEpisodes(environemnt, agent, num_episodes)
+simulateEpisodes(environment, agent, num_episodes)
