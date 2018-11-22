@@ -213,13 +213,15 @@ class BatchRLAgent(Agent):
 					self.optim.zero_grad()
 					regularised_loss.backward()
 					self.optim.step()
-					self.Q.updateState({'is_training' : False})
-
+					
 					final_parameters = utils.get_params_data(list(self.Q.parameters()))
 
 					delta_parameters = utils.sub_tensor_lists(final_parameters, initial_parameters)
 					pi_component = utils.delta_param_gradient_product(delta_parameters, gradients)
-					self.pi_accumulator = utils.add_tensor_lists(self.pi_accumulator, pi_component) 
+					self.pi_accumulator = utils.add_tensor_lists(self.pi_accumulator, pi_component)
+
+					self.Q.updateState({'is_training' : False})
+ 
 
 
 				else:

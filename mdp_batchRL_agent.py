@@ -6,6 +6,8 @@ import torch.nn.functional as F
 import itertools
 import sys
 
+import utils
+
 class Network(nn.Module):
 	"""
 	Fully-connected feedforward neural network
@@ -50,7 +52,11 @@ class BatchRLAgent(Agent):
 
 		self.D = []                 # all experiences ; D[i] contains list of experiences in ith batch of batchRL
 		self.D.append([]) 			
-		self.episode = 0 			# keeps track of episode number 
+		self.episode = 0 			# keeps track of episode number
+
+		self.importance = None 
+		self.initial_params_value = None
+		self.pi_accumulator = None 
 
 	def initQNetwork(self, state, actions, dropout_input, dropout_hidden, num_layers=1, hidden_dim=20):
 		"""
@@ -82,6 +88,14 @@ class BatchRLAgent(Agent):
 
 		self.cpu_device = torch.device('cpu')
 		self.Q.to(self.fast_device)
+
+		params = list(self.Q.parameters())
+		#print("Initial Params: {}".format(params))
+		self.importance = utils.get_zero_like(params)
+		#print(self.importance)
+		self.initial_params_value = utils.get_params_data(params)
+		#print(self.initial_params_value)
+		self.pi_accumulator = utils.get_zero_like(params)
 
 	def getAction(self, state, train=False):
 		"""
@@ -136,6 +150,12 @@ class BatchRLAgent(Agent):
 			# can either use ER or FQI
 			self.trainQNetworkER()
 
+			final_params_value = utils.get_params_data(list(self.Q.parameters()))
+			delta_params = utils.sub_tensor_lists(final_params_value,self.initial_params_value)
+			utils.update_importance(self.importance, self.pi_accumulator, delta_params)
+			
+			self.initial_params_value = final_params_value
+
 	def trainQNetworkER(self):
 		"""
 			Trains Q-Network with experience replay with only the last batch of data. 
@@ -186,8 +206,24 @@ class BatchRLAgent(Agent):
 					outputs = self.Q(torch.from_numpy(batch_inputs_encoded))
 					loss = self.mse_loss(outputs, torch.unsqueeze(torch.from_numpy(target), dim=1))
 					self.optim.zero_grad()
-					loss.backward()
+					loss.backward(retain_graph=True)
+
+					params = list(self.Q.parameters())
+					initial_parameters = utils.get_params_data(params)
+					gradients = utils.get_grads_from_params(params)
+
+					regularised_loss = loss + 0.1 * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
+					self.optim.zero_grad()
+					regularised_loss.backward()
 					self.optim.step()
+					
+
+					final_parameters = utils.get_params_data(list(self.Q.parameters()))
+
+					delta_parameters = utils.sub_tensor_lists(final_parameters, initial_parameters)
+					pi_component = utils.delta_param_gradient_product(delta_parameters, gradients)
+					self.pi_accumulator = utils.add_tensor_lists(self.pi_accumulator, pi_component)
+
 					self.Q.updateState({'is_training' : False})
 
 				else:
@@ -225,8 +261,22 @@ class BatchRLAgent(Agent):
 					outputs = torch.max(outputs_all + (-1e24) * (1 - actions_one_hot), dim=1)[0]
 					loss = self.mse_loss(outputs, target)
 					self.optim.zero_grad()
-					loss.backward()
+					loss.backward(retain_graph=True)
+
+					params = list(self.Q.parameters())
+					initial_parameters = utils.get_params_data(params)
+					gradients = utils.get_grads_from_params(params)
+
+					regularised_loss = loss + 0.1 * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
+					self.optim.zero_grad()
+					regularised_loss.backward()
 					self.optim.step()
+
+					final_parameters = utils.get_params_data(list(self.Q.parameters()))
+
+					delta_parameters = utils.sub_tensor_lists(final_parameters, initial_parameters)
+					pi_component = utils.delta_param_gradient_product(delta_parameters, gradients)
+					self.pi_accumulator = utils.add_tensor_lists(self.pi_accumulator, pi_component)
 					self.Q.updateState({'is_training' : False})
 
 				if (epoch_done):
