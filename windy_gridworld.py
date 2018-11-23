@@ -1,4 +1,5 @@
 from environment import *
+import numpy as np
 
 # Implementation of Windy Gridworld problem
 class WindyGridworld(Environment):
@@ -115,6 +116,8 @@ class GridPositionState(State):
 	def initMembers(cls, origin, max_pos):
 		cls.origin = origin
 		cls.max_pos = max_pos
+		cls.encoding_sizes = tuple(np.array(cls.max_pos) - np.array(cls.origin) + 1)
+		cls.encoding_dim = np.sum(cls.encoding_sizes)
 
 	@classmethod
 	def correctOOGridPos(cls, pos):
@@ -126,6 +129,15 @@ class GridPositionState(State):
 
 	def getLegalActions(self):
 		return GridAction.all_actions
+
+	def getEncoding(self):
+		pos = self.pos
+		origin = self.origin
+		for i in range(len(pos)):
+			cur_encoding = [0.0 for _ in range(self.encoding_sizes[i])]
+			cur_encoding[pos[i] - origin[i]] = 1.0
+			encoding.extend(cur_encoding)
+		return np.array(encoding)
 			
 class GridAction(Action):
 	"""

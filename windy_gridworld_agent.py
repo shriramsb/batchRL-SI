@@ -56,9 +56,7 @@ class BatchRLAgent(Agent):
 			Currently uses one-hot encoding for each dimension of state, action. Encoded vectors are concatenated to get input to NN
 			MSE loss with target Q value and SGD+momentum optimizer used
 		"""
-		self.state_encoding_sizes = np.array(state.max_pos) - np.array(state.origin) + 1
-		self.state_encoding_dim = np.sum(self.state_encoding_sizes)
-		self.state_encoding_sizes = tuple(self.state_encoding_sizes)
+		self.state_encoding_dim = state.encoding_dim
 		self.action_encoding_dim = len(actions)
 		self.actions_to_index = {}
 		self.actions_to_index = {actions[i] : i for i in range(len(actions))}
@@ -124,6 +122,7 @@ class BatchRLAgent(Agent):
 		"""
 			Update agent's experience. After sufficient experiences, runs ER or FQI to update Q values
 		"""
+		# TODO : append new list to D only at the end of an episode
 		self.D[self.episode].append(d)
 		if (is_episode_end):
 			self.D.append([])
@@ -241,14 +240,7 @@ class BatchRLAgent(Agent):
 		"""
 			Returns one-hot encoding of state as 1D numpy array, by appending one-hot vectors for x and y coordinates. 
 		"""
-		encoding = []
-		origin = state.origin
-		pos = state.pos
-		for i in range(len(pos)):
-			cur_encoding = [0.0 for _ in range(self.state_encoding_sizes[i])]
-			cur_encoding[pos[i] - origin[i]] = 1.0
-			encoding.extend(cur_encoding)
-		return np.array(encoding)
+		return state.getEncoding()
 
 	def getStateListEncoding(self, state_list):
 		encoding = []
