@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 psi = 0.00000001 #small value to avoid division with zeros
 
 def get_zero_like(params):
@@ -17,8 +18,9 @@ def get_params_data(params):
 	#reutrn list of constants for corresponding list of trainable vars
 	params_data = []
 	for param in params:
-		params_data.append(param.data)
+		params_data.append(param.detach().clone())
 
+	#print(params_data)
 	return params_data
 
 def get_grads_from_params(params):
@@ -90,4 +92,4 @@ def update_importance(previous_importance,
 	for i in range(len(previous_importance)):
 		previous_importance[i] += path_integral[i]/(delta_params[i]**2 + psi)
 
-	print(previous_importance)
+	#print(previous_importance)
