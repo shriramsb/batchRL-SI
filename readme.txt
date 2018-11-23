@@ -20,4 +20,8 @@ Currently not using Dropout. So, dropout_input=0.0 (Probability of dropping inpu
 num_layers : number of layers in the network (number of hidden layers = num_layer - 1)
 hidden_dim : number of hidden neurons in each layer
 
+
+Description of MDP files : https://docs.google.com/document/d/1vBha-1VBia47slmyPSNr1T7inB7Os3wPMVxo-iRQ_0Q/edit?usp=sharing
+
 [1] : Batch Reinforcement Learning in a Complex Domain
+
