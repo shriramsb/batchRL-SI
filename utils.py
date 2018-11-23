@@ -18,16 +18,18 @@ def get_params_data(params):
 	#reutrn list of constants for corresponding list of trainable vars
 	params_data = []
 	for param in params:
+		# WEAK : check if this is equivalent to creating a new tensor and copying the values of param.data to it
 		params_data.append(param.detach().clone())
 
-	#print(params_data)
 	return params_data
 
 def get_grads_from_params(params):
 	#params is list of trainable parameters
+
+	# CHECK : Added .detach().clone() just to be safe
 	gradients = []
 	for param in params:
-		gradients.append(param.grad)
+		gradients.append(param.grad.detach().clone())
 
 	#print("params: {}".format(params))
 	#print("gradients: {}".format(gradients))
@@ -37,8 +39,9 @@ def get_grads_from_params(params):
 def delta_param_gradient_product(delta_params, grads):
 	# negative of delta_params * gradients
 	result = []
-	for i in range(len(delta_params)):
-		result.append(delta_params[i]*grads[i]*-1)
+	with torch.no_grad():
+		for i in range(len(delta_params)):
+			result.append(delta_params[i]*grads[i]*-1)
 
 	'''
 	print("delta_params: {}".format(delta_params))
@@ -58,8 +61,10 @@ def add_tensor_lists(list_a, list_b):
 
 def sub_tensor_lists(list_a, list_b):
 	result = []
-	for i in range(len(list_a)):
-		result.append(list_a[i]-list_b[i])
+	# Change : ensure no graph construction
+	with torch.no_grad():
+		for i in range(len(list_a)):
+			result.append(list_a[i] - list_b[i])
 
 	return result
 
@@ -84,12 +89,15 @@ def get_regularisation_penalty(params, initial_params, importance):
 
 	return penalty
 
-def update_importance(previous_importance, 
-	path_integral, 
-	delta_params):
-	#print("path_integral: {}".format(path_integral))
-	#print("delta_params: {}".format(delta_params))
-	for i in range(len(previous_importance)):
-		previous_importance[i] += path_integral[i]/(delta_params[i]**2 + psi)
+def update_importance(previous_importance, path_integral, delta_params, importance_retain_factor):
+	with torch.no_grad():
+		for i in range(len(previous_importance)):
+			previous_importance[i].mul_(importance_retain_factor)
+			previous_importance[i].add_(path_integral[i]/(delta_params[i]**2 + psi))
 
 	#print(previous_importance)
+
+def add_to_tensor_lists(dest, src):
+	with torch.no_grad():
+		for i in range(len(dest)):
+			dest[i].add_(src[i])

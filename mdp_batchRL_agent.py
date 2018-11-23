@@ -66,15 +66,6 @@ class BatchRLAgent(Agent):
 		mdp_environment.MDPState.initEncoder(encoding_type)
 
 		self.importance = None 
-		self.initial_params_value = None
-		self.pi_accumulator = None
-
-		if self.learning_hparams["use_regularisation"]:
-			print("using regularisation")
-			self.regularisaion_weight = 1
-		else:
-			print("not using regularisation")
-			self.regularisaion_weight = 0
 
 
 	def initQNetwork(self, state, actions, dropout_input, dropout_hidden, num_layers=1, hidden_dim=20):
@@ -114,10 +105,6 @@ class BatchRLAgent(Agent):
 		params = list(self.Q.parameters())
 		#print("Initial Params: {}".format(params))
 		self.importance = utils.get_zero_like(params)
-		#print(self.importance)
-		self.initial_params_value = utils.get_params_data(params)
-		#print(self.initial_params_value)
-		self.pi_accumulator = utils.get_zero_like(params)
 
 	def getAction(self, state, train=False):
 		"""
@@ -172,18 +159,13 @@ class BatchRLAgent(Agent):
 			# can either use ER or FQI
 			self.trainQNetworkER()
 
-			final_params_value = utils.get_params_data(list(self.Q.parameters()))
-			delta_params = utils.sub_tensor_lists(final_params_value,self.initial_params_value)
-			utils.update_importance(self.importance, self.pi_accumulator, delta_params)
-
-			self.initial_params_value = final_params_value
-
 	def trainQNetworkER(self):
 		"""
 			Trains Q-Network with experience replay with only the last batch of data. 
 			Replays examples in reverse order
 		"""
-		self.pi_accumulator = utils.get_zero_like(list(self.Q.parameters()))
+		initial_params_value = utils.get_params_data(list(self.Q.parameters()))
+		pi_accumulator = utils.get_zero_like(list(self.Q.parameters()))
 		batch_size = self.learning_hparams['batch_size']
 		data = self.D[-2][: : -1] 			# Reversing last batch of data. (-2) since an empty list is appended to self.D at the end of batch just before calling this function
 		# Train for self.ER_epochs
@@ -236,7 +218,7 @@ class BatchRLAgent(Agent):
 					initial_parameters = utils.get_params_data(params)
 					gradients = utils.get_grads_from_params(params)
 
-					regularised_loss = loss + self.regularisaion_weight * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
+					regularised_loss = loss + self.learning_hparams['reg'] * utils.get_regularisation_penalty(params, initial_params_value, self.importance)
 					self.optim.zero_grad()
 					regularised_loss.backward()
 					self.optim.step()
@@ -246,7 +228,7 @@ class BatchRLAgent(Agent):
 
 					delta_parameters = utils.sub_tensor_lists(final_parameters, initial_parameters)
 					pi_component = utils.delta_param_gradient_product(delta_parameters, gradients)
-					self.pi_accumulator = utils.add_tensor_lists(self.pi_accumulator, pi_component)
+					utils.add_to_tensor_lists(pi_accumulator, pi_component)
 
 					self.Q.updateState({'is_training' : False})
 
@@ -294,7 +276,7 @@ class BatchRLAgent(Agent):
 
 					#sys.exit(0)
 
-					regularised_loss = loss + self.regularisaion_weight * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
+					regularised_loss = loss + self.learning_hparams['reg'] * utils.get_regularisation_penalty(params, initial_params_value, self.importance)
 					self.optim.zero_grad()
 					regularised_loss.backward()
 					self.optim.step()
@@ -306,12 +288,16 @@ class BatchRLAgent(Agent):
 					delta_parameters = utils.sub_tensor_lists(final_parameters, initial_parameters)
 					pi_component = utils.delta_param_gradient_product(delta_parameters, gradients)
 					#print("pi_component: {}".format(pi_component))
-					self.pi_accumulator = utils.add_tensor_lists(self.pi_accumulator, pi_component)
+					utils.add_to_tensor_lists(pi_accumulator, pi_component)
 					self.Q.updateState({'is_training' : False})
 
 				if (epoch_done):
 					break
 		
+		final_params_value = utils.get_params_data(list(self.Q.parameters()))
+		delta_params = utils.sub_tensor_lists(final_params_value,initial_params_value)
+		utils.update_importance(self.importance, pi_accumulator, delta_params, self.training_hparams['importance_retain_factor'])
+
 
 	def getEncodingsFromList(self, sa_list):
 		encodings = np.empty((len(sa_list), self.encoding_dim), dtype=np.float32)
