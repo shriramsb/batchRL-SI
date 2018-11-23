@@ -70,8 +70,10 @@ class BatchRLAgent(Agent):
 		self.pi_accumulator = None
 
 		if self.learning_hparams["use_regularisation"]:
+			print("using regularisation")
 			self.regularisaion_weight = 1
 		else:
+			print("not using regularisation")
 			self.regularisaion_weight = 0
 
 
@@ -181,7 +183,7 @@ class BatchRLAgent(Agent):
 			Trains Q-Network with experience replay with only the last batch of data. 
 			Replays examples in reverse order
 		"""
-		self.pi_accumulator = utils.get_zero_like(params)
+		self.pi_accumulator = utils.get_zero_like(list(self.Q.parameters()))
 		batch_size = self.learning_hparams['batch_size']
 		data = self.D[-2][: : -1] 			# Reversing last batch of data. (-2) since an empty list is appended to self.D at the end of batch just before calling this function
 		# Train for self.ER_epochs
@@ -228,7 +230,7 @@ class BatchRLAgent(Agent):
 					loss = self.mse_loss(outputs, torch.unsqueeze(torch.from_numpy(target), dim=1))
 					self.optim.zero_grad()
 					loss.backward(retain_graph=True)
-					print("loss: {}".format(loss))
+					#print("loss: {}".format(loss))
 
 					params = list(self.Q.parameters())
 					initial_parameters = utils.get_params_data(params)
@@ -287,6 +289,7 @@ class BatchRLAgent(Agent):
 
 					params = list(self.Q.parameters())
 					initial_parameters = utils.get_params_data(params)
+					
 					gradients = utils.get_grads_from_params(params)
 
 					#sys.exit(0)
@@ -297,9 +300,12 @@ class BatchRLAgent(Agent):
 					self.optim.step()
 
 					final_parameters = utils.get_params_data(list(self.Q.parameters()))
+					#print("final_parameters: {}".format(final_parameters))
+					#print("initial_parameters: {}".format(initial_parameters))
 
 					delta_parameters = utils.sub_tensor_lists(final_parameters, initial_parameters)
 					pi_component = utils.delta_param_gradient_product(delta_parameters, gradients)
+					#print("pi_component: {}".format(pi_component))
 					self.pi_accumulator = utils.add_tensor_lists(self.pi_accumulator, pi_component)
 					self.Q.updateState({'is_training' : False})
 

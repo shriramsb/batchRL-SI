@@ -38,12 +38,12 @@ np.random.seed(0)
 
 
 
-environment = MDPEnvironment(mdp_file_path='mdp_data/mdp_2.dat')
-learning_hparams = {'learning_rate' : 0.125, 'momentum' : 0.0, 'batch_size' : 16, 'use_regularisation': "True"}
+environment = MDPEnvironment(mdp_file_path='mdp_data/mdp_2_2.dat')
+learning_hparams = {'learning_rate' : 0.125, 'momentum' : 0.0, 'batch_size' : 16, 'use_regularisation': True}
 agent = BatchRLAgent(ER_epochs=100, episodes_per_batch=1, epsilon=0.1, gamma=environment.gamma, learning_hparams=learning_hparams, multi_output=True, gpu_id=-1)
 dropout_input = 0.0
 dropout_hidden = 0.0
-agent.initQNetwork(environment.getCurrentState(), MDPAction.all_actions, dropout_input, dropout_hidden, num_layers=2, hidden_dim=10)
+agent.initQNetwork(environment.getCurrentState(), MDPAction.all_actions, dropout_input, dropout_hidden, num_layers=1, hidden_dim=4)
 
-num_episodes = 1000
+num_episodes = 100
 simulateEpisodes(environment, agent, num_episodes)
