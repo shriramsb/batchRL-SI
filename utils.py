@@ -27,6 +27,9 @@ def get_grads_from_params(params):
 	for param in params:
 		gradients.append(param.grad)
 
+	#print("params: {}".format(params))
+	#print("gradients: {}".format(gradients))
+
 	return gradients
 
 def delta_param_gradient_product(delta_params, grads):
@@ -34,6 +37,12 @@ def delta_param_gradient_product(delta_params, grads):
 	result = []
 	for i in range(len(delta_params)):
 		result.append(delta_params[i]*grads[i]*-1)
+
+	'''
+	print("delta_params: {}".format(delta_params))
+	print("grads: {}".format(grads))
+	print("result: {}".format(result))
+	'''
 
 	return result
 
@@ -76,6 +85,8 @@ def get_regularisation_penalty(params, initial_params, importance):
 def update_importance(previous_importance, 
 	path_integral, 
 	delta_params):
+	#print("path_integral: {}".format(path_integral))
+	#print("delta_params: {}".format(delta_params))
 	for i in range(len(previous_importance)):
 		previous_importance[i] += path_integral[i]/(delta_params[i]**2 + psi)
 
