@@ -56,7 +56,12 @@ class BatchRLAgent(Agent):
 
 		self.importance = None 
 		self.initial_params_value = None
-		self.pi_accumulator = None 
+		self.pi_accumulator = None
+
+		if self.learning_hparams["use_regularisation"]:
+			self.regularisaion_weight = 1
+		else:
+			self.regularisaion_weight = 0 
 
 	def initQNetwork(self, state, actions, dropout_input, dropout_hidden, num_layers=1, hidden_dim=20):
 		"""
@@ -153,7 +158,7 @@ class BatchRLAgent(Agent):
 			final_params_value = utils.get_params_data(list(self.Q.parameters()))
 			delta_params = utils.sub_tensor_lists(final_params_value,self.initial_params_value)
 			utils.update_importance(self.importance, self.pi_accumulator, delta_params)
-			
+
 			self.initial_params_value = final_params_value
 
 	def trainQNetworkER(self):
@@ -161,6 +166,7 @@ class BatchRLAgent(Agent):
 			Trains Q-Network with experience replay with only the last batch of data. 
 			Replays examples in reverse order
 		"""
+		self.pi_accumulator = utils.get_zero_like(params)
 		batch_size = self.learning_hparams['batch_size']
 		data = self.D[-2][: : -1] 			# Reversing last batch of data. (-2) since an empty list is appended to self.D at the end of batch just before calling this function
 		# Train for self.ER_epochs
@@ -207,12 +213,13 @@ class BatchRLAgent(Agent):
 					loss = self.mse_loss(outputs, torch.unsqueeze(torch.from_numpy(target), dim=1))
 					self.optim.zero_grad()
 					loss.backward(retain_graph=True)
+					print("loss: {}".format(loss))
 
 					params = list(self.Q.parameters())
 					initial_parameters = utils.get_params_data(params)
 					gradients = utils.get_grads_from_params(params)
 
-					regularised_loss = loss + 0.1 * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
+					regularised_loss = loss + self.regularisaion_weight * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
 					self.optim.zero_grad()
 					regularised_loss.backward()
 					self.optim.step()
@@ -267,7 +274,9 @@ class BatchRLAgent(Agent):
 					initial_parameters = utils.get_params_data(params)
 					gradients = utils.get_grads_from_params(params)
 
-					regularised_loss = loss + 0.1 * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
+					#sys.exit(0)
+
+					regularised_loss = loss + self.regularisaion_weight * utils.get_regularisation_penalty(params, self.initial_params_value, self.importance)
 					self.optim.zero_grad()
 					regularised_loss.backward()
 					self.optim.step()
