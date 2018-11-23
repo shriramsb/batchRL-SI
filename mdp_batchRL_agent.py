@@ -5,6 +5,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import itertools
 import sys
+import util
+from copy import deepcopy
+import math
+
+import mdp_environment
 
 import utils
 
@@ -36,7 +41,10 @@ class Network(nn.Module):
 		return x
 
 class BatchRLAgent(Agent):
-	def __init__(self, ER_epochs, episodes_per_batch, epsilon, gamma, learning_hparams, multi_output=False, gpu_id=-1):
+	def __init__(self, ER_epochs, episodes_per_batch, epsilon, gamma, learning_hparams, 
+					multi_output=False, 
+					gpu_id=-1, 
+					encoding_type='one-hot'):
 		self.ER_epochs = ER_epochs 						# number of epochs to train in batchER
 		self.episodes_per_batch = episodes_per_batch 	# number of episodes to run before training on batch
 		self.epsilon = epsilon 	 						# epsilon for epsilon-greedy action selection
@@ -52,7 +60,10 @@ class BatchRLAgent(Agent):
 
 		self.D = []                 # all experiences ; D[i] contains list of experiences in ith batch of batchRL
 		self.D.append([]) 			
+
 		self.episode = 0 			# keeps track of episode number
+		self.encoding_type = encoding_type
+		mdp_environment.MDPState.initEncoder(encoding_type)
 
 		self.importance = None 
 		self.initial_params_value = None
@@ -61,7 +72,8 @@ class BatchRLAgent(Agent):
 		if self.learning_hparams["use_regularisation"]:
 			self.regularisaion_weight = 1
 		else:
-			self.regularisaion_weight = 0 
+			self.regularisaion_weight = 0
+
 
 	def initQNetwork(self, state, actions, dropout_input, dropout_hidden, num_layers=1, hidden_dim=20):
 		"""
@@ -70,7 +82,10 @@ class BatchRLAgent(Agent):
 			MSE loss with target Q value and SGD+momentum optimizer used
 		"""
 		self.state_encoding_dim = state.encoding_dim
-		self.action_encoding_dim = len(actions)
+		if (self.encoding_type == 'one-hot'):
+			self.action_encoding_dim = len(actions)
+		elif (self.encoding_type == 'binary'):
+			self.action_encoding_dim = math.ceil(math.log(len(actions), 2))
 		self.actions_to_index = {actions[i] : i for i in range(len(actions))}
 		self.index_to_action = {i : actions[i] for i in range(len(actions))}
 		self.encoding_dim = self.state_encoding_dim + self.action_encoding_dim
@@ -201,7 +216,7 @@ class BatchRLAgent(Agent):
 							max_Q.append(max_q.item())
 
 					# get target r + max_Q
-					target = np.array([v[2] for v in batch]) + self.gamma * np.array(max_Q)
+					target = np.array([v[2] for v in batch], dtype=np.float32) + self.gamma * np.array(max_Q, dtype=np.float32)
 
 					# list of (s, a) tuples in batch
 					batch_inputs = [(v[0], v[1]) for v in batch]
@@ -299,6 +314,35 @@ class BatchRLAgent(Agent):
 			encodings[i] = np.concatenate((self.getStateEncoding(sa[0]), self.getActionEncoding(sa[1])), axis=0)
 		return encodings
 
+	def getQValue(self, state, action):
+		"""
+			Given state, action, get Q-value from current network state
+		"""
+		if (not self.multi_output):
+			return self.Q(torch.Tensor(self.getEncodingsFromList([(state, action)])).to(self.fast_device)).item()
+		else:
+			return torch.squeeze(self.Q(torch.Tensor(self.getStateListEncoding([state])).to(self.fast_device)), dim=0)[self.actions_to_index[action]].item()
+
+	def getQValuesFromStateList(self, state_list):
+		"""
+			Gets Q value for all legals actions for each state in the state list. 
+			Currently inefficient due to doing 1 forward pass for each (state, action) pair.
+			TODO : make required pairs into batch and find Q-values in few forward passes
+		"""
+		q_val = []
+		for state in state_list:
+			q_val.append({})
+			for a in state.getLegalActions():
+				q_val[-1][a] = self.getQValue(state, a)
+
+		return q_val
+
+	def getParameterValues(self):
+		p_numpy = []
+		for p in self.Q.parameters():
+			p_numpy.append(deepcopy(p.to(self.cpu_device).detach().numpy()))
+		return p_numpy
+
 	def getStateEncoding(self, state):
 		"""
 			Returns one-hot encoding of state as 1D numpy array, by appending one-hot vectors for x and y coordinates. 
@@ -315,6 +359,9 @@ class BatchRLAgent(Agent):
 		"""
 			Returns one-hot encoding of action as 1D numpy array.
 		"""
-		encoding = [0.0 for _ in range(self.action_encoding_dim)]
-		encoding[self.actions_to_index[action]] = 1.0
-		return np.array(encoding, dtype=np.float32)
+		if (self.encoding_type == 'one-hot'):
+			encoding = [0.0 for _ in range(self.action_encoding_dim)]
+			encoding[self.actions_to_index[action]] = 1.0
+			return np.array(encoding, dtype=np.float32)
+		else:
+			return np.array(util.getBinaryEncoding(self.actions_to_index[action], self.action_encoding_dim), dtype=np.float32)
