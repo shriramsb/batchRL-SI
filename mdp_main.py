@@ -39,7 +39,7 @@ np.random.seed(0)
 
 environment = MDPEnvironment(mdp_file_path='mdp_data/mdp_2.dat')
 learning_hparams = {'learning_rate' : 0.125, 'momentum' : 0.0, 'batch_size' : 16}
-agent = BatchRLAgent(ER_epochs=10, episodes_per_batch=2, epsilon=0.1, gamma=environment.gamma, learning_hparams=learning_hparams, 
+agent = BatchRLAgent(ER_epochs=100, episodes_per_batch=1, epsilon=0.1, gamma=environment.gamma, learning_hparams=learning_hparams, 
                         multi_output=True, gpu_id=-1)
 dropout_input = 0.0
 dropout_hidden = 0.0

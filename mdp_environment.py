@@ -1,5 +1,7 @@
 from environment import *
 import numpy as np
+import math
+import util
 
 class MDPEnvironment(Environment):
 	"""
@@ -85,19 +87,31 @@ class MDPState(object):
 		cls.encoding_dim - dimensions of 1D encoded vector
 	"""
 
-	def __init__(self, num, is_terminal):
+	def __init__(self, num, is_terminal=False):
 		super().__init__()
 		self.num = num
 		self.is_terminal = is_terminal
 
 	@classmethod
 	def initMembers(cls, num_states):
-		cls.encoding_dim = num_states
+		cls.num_states = num_states
+		cls.encoding_dim = None
+
+	@classmethod
+	def initEncoder(cls, encoding_type):
+		cls.encoding_type = encoding_type
+		if (cls.encoding_type == 'one-hot'):
+			cls.encoding_dim = cls.num_states
+		elif (cls.encoding_type == 'binary'):
+			cls.encoding_dim = math.ceil(math.log(cls.num_states, 2))
 
 	def getEncoding(self):
-		encoding = [0.0 for _ in range(self.encoding_dim)]
-		encoding[self.num] = 1.0
-		return np.array(encoding)
+		if (self.encoding_type == 'one-hot'):
+			encoding = np.zeros((self.encoding_dim, ), dtype=np.float32)
+			encoding[self.num] = 1.0
+		elif (self.encoding_type == 'binary'):
+			 encoding = np.array(util.getBinaryEncoding(self.num, self.encoding_dim), dtype=np.float32)
+		return encoding
 
 	def getLegalActions(self):
 		return MDPAction.all_actions
