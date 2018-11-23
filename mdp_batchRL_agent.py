@@ -36,7 +36,8 @@ class Network(nn.Module):
 		is_training = self.state['is_training']
 		x = F.dropout(x, p=dropout_input, training=is_training)
 		for i in range(self.num_layers - 1):
-			x = F.dropout(F.relu(self.fc[i](x)), p=dropout_hidden, training=is_training)
+			# x = F.dropout(F.relu(self.fc[i](x)), p=dropout_hidden, training=is_training)
+			x = F.dropout(F.leaky_relu(self.fc[i](x), negative_slope=0.1), p=dropout_hidden, training=is_training)
 		x = self.fc[self.num_layers - 1](x)
 		return x
 
