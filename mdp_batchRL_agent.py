@@ -41,9 +41,9 @@ class Network(nn.Module):
 		return x
 
 class BatchRLAgent(Agent):
-	def __init__(self, ER_epochs, episodes_per_batch, epsilon, gamma, learning_hparams, 
-					multi_output=False, 
-					gpu_id=-1, 
+	def __init__(self, ER_epochs, episodes_per_batch, epsilon, gamma, learning_hparams,
+					multi_output=False,
+					gpu_id=-1,
 					encoding_type='one-hot'):
 		self.ER_epochs = ER_epochs 						# number of epochs to train in batchER
 		self.episodes_per_batch = episodes_per_batch 	# number of episodes to run before training on batch
@@ -59,13 +59,13 @@ class BatchRLAgent(Agent):
 		self.Q = None
 
 		self.D = []                 # all experiences ; D[i] contains list of experiences in ith batch of batchRL
-		self.D.append([]) 			
+		self.D.append([])
 
 		self.episode = 0 			# keeps track of episode number
 		self.encoding_type = encoding_type
 		mdp_environment.MDPState.initEncoder(encoding_type)
 
-		self.importance = None 
+		self.importance = None
 
 
 	def initQNetwork(self, state, actions, dropout_input, dropout_hidden, num_layers=1, hidden_dim=20):
@@ -82,12 +82,12 @@ class BatchRLAgent(Agent):
 		self.actions_to_index = {actions[i] : i for i in range(len(actions))}
 		self.index_to_action = {i : actions[i] for i in range(len(actions))}
 		self.encoding_dim = self.state_encoding_dim + self.action_encoding_dim
-		
+
 		if (not self.multi_output):
-			self.Q = Network(self.encoding_dim, 1, dropout_input=dropout_input, dropout_hidden=dropout_hidden, 
+			self.Q = Network(self.encoding_dim, 1, dropout_input=dropout_input, dropout_hidden=dropout_hidden,
 								num_layers=num_layers, hidden_dim=hidden_dim)
 		else:
-			self.Q = Network(self.state_encoding_dim, len(actions), dropout_input=dropout_input, dropout_hidden=dropout_hidden, 
+			self.Q = Network(self.state_encoding_dim, len(actions), dropout_input=dropout_input, dropout_hidden=dropout_hidden,
 								num_layers=num_layers, hidden_dim=hidden_dim)
 		self.mse_loss = nn.MSELoss()
 		self.optim = torch.optim.SGD(self.Q.parameters(), lr=self.learning_hparams['learning_rate'], momentum=self.learning_hparams['momentum'])
@@ -152,7 +152,7 @@ class BatchRLAgent(Agent):
 		self.D[-1].append(d)
 		if (is_episode_end):
 			self.episode += 1
-		
+
 		if (is_episode_end and (self.episode % self.episodes_per_batch == 0)):
 			self.D.append([])
 			# train the network with experience of current batch
@@ -161,7 +161,7 @@ class BatchRLAgent(Agent):
 
 	def trainQNetworkER(self):
 		"""
-			Trains Q-Network with experience replay with only the last batch of data. 
+			Trains Q-Network with experience replay with only the last batch of data.
 			Replays examples in reverse order
 		"""
 		initial_params_value = utils.get_params_data(list(self.Q.parameters()))
@@ -175,11 +175,11 @@ class BatchRLAgent(Agent):
 
 			# Updates corresponding to single epoch
 			while (True):
-				
+
 				# extract batch of data
 				if (pos + batch_size >= len(data)):
 					epoch_done = True
-				
+
 				batch = data[pos : pos + batch_size]
 				pos += batch_size
 
@@ -222,7 +222,7 @@ class BatchRLAgent(Agent):
 					self.optim.zero_grad()
 					regularised_loss.backward()
 					self.optim.step()
-					
+
 
 					final_parameters = utils.get_params_data(list(self.Q.parameters()))
 
@@ -271,7 +271,7 @@ class BatchRLAgent(Agent):
 
 					params = list(self.Q.parameters())
 					initial_parameters = utils.get_params_data(params)
-					
+
 					gradients = utils.get_grads_from_params(params)
 
 					#sys.exit(0)
@@ -293,10 +293,10 @@ class BatchRLAgent(Agent):
 
 				if (epoch_done):
 					break
-		
+
 		final_params_value = utils.get_params_data(list(self.Q.parameters()))
 		delta_params = utils.sub_tensor_lists(final_params_value,initial_params_value)
-		utils.update_importance(self.importance, pi_accumulator, delta_params, self.training_hparams['importance_retain_factor'])
+		utils.update_importance(self.importance, pi_accumulator, delta_params, self.learning_hparams['importance_retain_factor'])
 
 
 	def getEncodingsFromList(self, sa_list):
@@ -317,7 +317,7 @@ class BatchRLAgent(Agent):
 
 	def getQValuesFromStateList(self, state_list):
 		"""
-			Gets Q value for all legals actions for each state in the state list. 
+			Gets Q value for all legals actions for each state in the state list.
 			Currently inefficient due to doing 1 forward pass for each (state, action) pair.
 			TODO : make required pairs into batch and find Q-values in few forward passes
 		"""
@@ -337,7 +337,7 @@ class BatchRLAgent(Agent):
 
 	def getStateEncoding(self, state):
 		"""
-			Returns one-hot encoding of state as 1D numpy array, by appending one-hot vectors for x and y coordinates. 
+			Returns one-hot encoding of state as 1D numpy array, by appending one-hot vectors for x and y coordinates.
 		"""
 		return state.getEncoding()
 
